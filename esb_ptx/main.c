@@ -67,19 +67,19 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
     switch (p_event->evt_id)
     {
         case NRF_ESB_EVENT_TX_SUCCESS:
-            NRF_LOG_DEBUG("TX SUCCESS EVENT");
+            NRF_LOG_INFO("TX SUCCESS EVENT");
             tx_packets_loaded--;
             break;
 
         case NRF_ESB_EVENT_TX_FAILED:
-            NRF_LOG_DEBUG("TX FAILED EVENT");
+            NRF_LOG_INFO("TX FAILED EVENT");
             (void) nrf_esb_flush_tx();
             tx_packets_loaded = 0;
             (void) nrf_esb_start_tx();
             break;
 
         case NRF_ESB_EVENT_RX_RECEIVED:
-            NRF_LOG_DEBUG("RX RECEIVED EVENT");
+            NRF_LOG_INFO("RX RECEIVED EVENT");
             while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS)
             {
                 if (rx_payload.length > 0)
@@ -94,7 +94,7 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 
 void hfclock_start(void)
 {
-    if((NRF_CLOCK->HFCLKSTAT & CLOCK_HFCLKSTAT_STATE_Msk) != (CLOCK_HFCLKSTAT_STATE_Running << CLOCK_HFCLKSTAT_STATE_Pos)) 
+    //if((NRF_CLOCK->HFCLKSTAT & CLOCK_HFCLKSTAT_STATE_Msk) != (CLOCK_HFCLKSTAT_STATE_Running << CLOCK_HFCLKSTAT_STATE_Pos)) 
     {
         NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
         NRF_CLOCK->TASKS_HFCLKSTART = 1;
@@ -116,9 +116,11 @@ void gpio_init( void )
 uint32_t esb_init( void )
 {
     uint32_t err_code;
+
     uint8_t base_addr_0[4] = {0xE7, 0xE7, 0xE7, 0xE7};
     uint8_t base_addr_1[4] = {0xC2, 0xC2, 0xC2, 0xC2};
     uint8_t addr_prefix[8] = {0xE7, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8 };
+
 
     nrf_esb_config_t nrf_esb_config         = NRF_ESB_DEFAULT_CONFIG;
     nrf_esb_config.protocol                 = NRF_ESB_PROTOCOL_ESB_DPL;
@@ -163,23 +165,35 @@ static void rtc_init(void)
 
 static void send_packet(uint8_t *data_ptr, uint32_t length)
 {
-    static nrf_esb_payload_t esb_payload;
-    esb_payload.noack = 0;
-    esb_payload.pipe = 0;
-    memcpy(esb_payload.data, data_ptr, length);
-    esb_payload.length = length;
-    nrf_esb_write_payload(&esb_payload);
-    tx_packets_loaded++;
+          static nrf_esb_payload_t esb_payload;
+          esb_payload.noack = 0;
+          esb_payload.pipe = 0;
+          memcpy(esb_payload.data, data_ptr, length);
+          esb_payload.length = length;
+          nrf_esb_write_payload(&esb_payload);
+          tx_packets_loaded++;
+          //NRF_LOG_INFO("send_packet %08d", tx_packets_loaded);
+
 }
 
 static void powerdown(void)
 {
+    NRF_LOG_FLUSH();
     __WFE();
     __SEV();
     __WFE();
 }
 
 volatile bool hfclk_disabled = false;
+
+void clocks_start( void )
+{
+    NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
+    NRF_CLOCK->TASKS_HFCLKSTART = 1;
+
+    while (NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
+}
+
 
 int main(void)
 {
@@ -201,7 +215,7 @@ int main(void)
     err_code = esb_init();
     APP_ERROR_CHECK(err_code);
 
-    NRF_LOG_DEBUG("Enhanced ShockBurst Transmitter Example started.");
+    NRF_LOG_DEBUG("RFID PTX Started.");
     
     uint8_t esb_packet[4] = {0};
 
@@ -210,17 +224,22 @@ int main(void)
         if(tx_send_packet)
         {
             hfclock_start();
-            tx_send_packet = false;
+
             esb_packet[1]++;
             send_packet(esb_packet, 4);
+            NRF_LOG_DEBUG("tx_send_packet = %d", tx_send_packet);
+
+            tx_send_packet = false;
         }
 
         if(tx_packets_loaded == 0)
         {
             // If the buffers are empty, disable the HF clock to save power
             hfclock_stop();
+            NRF_LOG_DEBUG("Stop HFCLK");
         }
 
+        NRF_LOG_FLUSH();
         powerdown();
     }
 }
